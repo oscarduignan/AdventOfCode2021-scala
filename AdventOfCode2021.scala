@@ -7,6 +7,7 @@ import scala.io.Source
   day01_countIncreasesInDepth
   day02_whereAreWeGoing
   day03_checkDiagnostics
+  day04_squidBingo
 
 def day01_countIncreasesInDepth =
   def input = Source.fromFile("day01.txt").getLines.map(_.toInt)
@@ -109,3 +110,75 @@ def day03_checkDiagnostics =
   println("- Day 03")
   println(s"  Part 1: $part1_powerConsumption")
   println(s"  Part 2: $part2_lifeSupport")
+
+def day04_squidBingo =
+  val input = Source.fromFile("day04.txt").getLines
+  val draws = input.next().split(",").toList.map(_.toInt)
+  val boards = input.filter(_.nonEmpty).map(_.split("\\s+").filter(_.nonEmpty).toList.map(_.toInt)).grouped(5).map(board => board ++ board.transpose).toList
+
+  // These would probably read so much more clearly if I extracted some methods for updating
+  // the boards and matching winning boards. I don't like seeing the map -> map -> map - I 
+  // find that quite hard to mentally parse.
+
+  /**
+   * I got stuck on this for a while until I used recursion and then it clicked, I think I
+   * was also getting slowed trying to over optimize it loads, and it went better when I 
+   * let go of that self imposed constraint - for example just mapping through numbers in
+   * a line when I know there will be only one that might be updated, and not doing anything
+   * fancy when I find it to linear-algebra the index for the number in the line along the
+   * other axis (since my boards contain all vertical and horziontal lines to make it easy)
+   */
+  @scala.annotation.tailrec
+  def findWinningScore(remainingDraws: List[Int], boards: List[Seq[Seq[Int]]]): Option[Int] = remainingDraws match {
+     case Nil => None // no winners!
+     case numberDrawn :: stillRemainingDraws =>
+       val updatedBoards = boards.map(board => board.map(line => line.map(number =>
+         if number == numberDrawn
+         then number * -1
+         else number
+       )))
+  
+       updatedBoards.find(board => board.exists(line => line.forall(_ < 0))) match {
+         case Some(winningBoard) => Some(calculateScore(numberDrawn, winningBoard))
+         case _                  => findWinningScore(stillRemainingDraws, updatedBoards)
+       }
+  }
+
+  /**
+   * This one was interesting, realised I could just replace marked numbers with a sentinel
+   * value of -1, because otherwise I would mess up if the number was 0. I also got caught
+   * out by "filter" is not "exclude" when calculating remaining boards without winners. And
+   * before I discovered that I had thought maybe I wasn't handling multiple winners in one
+   * go so I refactored to allow for that as well.
+   */
+  @scala.annotation.tailrec
+  def findLastWinningScore(remainingDraws: List[Int], boards: List[Seq[Seq[Int]]], winners: List[(Int, Seq[Seq[Int]])]): Option[Int] = remainingDraws match {
+     case Nil => winners match {
+       case Nil => None
+       case (winningNumber, winningBoard) :: earlierWinners => 
+         Some(calculateScore(winningNumber, winningBoard))
+     }
+     case numberDrawn :: stillRemainingDraws =>
+       val updatedBoards = boards.map(board => board.map(line => line.map(number =>
+         if number == numberDrawn
+         then -1
+         else number
+       ))).zipWithIndex
+  
+       updatedBoards.filter(board => board._1.exists(line => line.forall(_ == -1))) match {
+         case Nil             => findLastWinningScore(stillRemainingDraws, updatedBoards.map(_._1), winners)
+         case winnersThisTurn =>
+           val indexesOfWinnersThisTurn = winnersThisTurn.map(_._2)
+           val boardsWithoutWinners = updatedBoards.filterNot(b => indexesOfWinnersThisTurn.contains(b._2)).map(_._1)
+           val allWinnersSoFar = winnersThisTurn.map(numberDrawn -> _._1) ++ winners
+
+           findLastWinningScore(stillRemainingDraws, boardsWithoutWinners, allWinnersSoFar)
+       }
+  }
+  
+  def calculateScore(winningNumber: Int, winningBoard: Seq[Seq[Int]]) =
+     winningBoard.take(winningBoard.length/2).flatten.filter(_ > 0).sum * winningNumber
+
+  println("- Day 04")
+  println(s"  Part 1: ${findWinningScore(draws, boards)}")
+  println(s"  Part 2: ${findLastWinningScore(draws, boards, Nil)}")
